@@ -1,0 +1,5 @@
+# SIZES
+WIDTH = 960
+HEIGHT = 540
+
+FONT_MENUBAR = ('Arial', 14)
