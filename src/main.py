@@ -14,17 +14,6 @@ from settings import *
 ARQUIVO_JSON = "agendamentos.json"
 
 
-def start_scheduler():
-    """Inicia uma thread para rodar o agendador em segundo plano"""
-    def run_scheduler():
-        while True:
-            schedule.run_pending()
-            time.sleep(1)
-
-    thread = threading.Thread(target=run_scheduler, daemon=True)
-    thread.start()
-
-
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -36,9 +25,19 @@ class App(ctk.CTk):
         self.add_frame = Add(self)
         self.add_frame.grid(row=1, column=1, padx=20, pady=20)
 
-        start_scheduler()
+        self.start_scheduler()
 
         self.mainloop()
+
+    def start_scheduler(self):
+        """Inicia uma thread para rodar o agendador em segundo plano"""
+        def run_scheduler():
+            while True:
+                schedule.run_pending()
+                time.sleep(1)
+
+        thread = threading.Thread(target=run_scheduler, daemon=True)
+        thread.start()
 
 
 class Add(ctk.CTkFrame):
@@ -55,28 +54,17 @@ class Add(ctk.CTkFrame):
         self.entry_hour.insert(0, 'HH:MM')
         self.entry_hour.grid(row=1, column=1, pady=5, padx=5)
 
-        self.label_hour = ctk.CTkLabel(self, text='Horário')
-        self.label_hour.grid(row=1, column=0, pady=5)
-
         self.entry_repeats = ctk.CTkEntry(self, width=100)
         self.entry_repeats.grid(row=2, column=1, pady=5, padx=5)
 
         self.label_repeats = ctk.CTkLabel(self, text='Repetições: ')
         self.label_repeats.grid(row=2, column=0, pady=5, padx=5)
 
-        # Controle deslizante para ajustar o volume do anúncio
-        self.label_volume = ctk.CTkLabel(self, text='Volume do Anúncio (%):')
-        self.label_volume.grid(row=3, column=0, pady=5, padx=5)
-
-        self.slider_volume = ctk.CTkSlider(self, from_=0, to=100)
-        self.slider_volume.set(100)  # Volume padrão em 100%
-        self.slider_volume.grid(row=3, column=1, pady=5, padx=5)
-
         self.schedule_button = ctk.CTkButton(self, text='Agendar Anúncio', command=self.schedule_music)
-        self.schedule_button.grid(row=4, column=0, columnspan=2, pady=10)
+        self.schedule_button.grid(row=1, column=0, pady=10)
 
         self.listbox = tk.Listbox(self, width=50, height=10)
-        self.listbox.grid(row=5, column=0, columnspan=2, pady=10)
+        self.listbox.grid(row=3, column=0, columnspan=2, pady=10)
 
         # Adiciona o evento de clique ao Listbox
         self.listbox.bind('<Button-1>', self.on_item_click)
@@ -87,7 +75,7 @@ class Add(ctk.CTkFrame):
         self.load_agendamentos()
 
     def add_mov(self):
-        """Abre o explorador de arquivos para selecionar um MOV"""
+        """Abre o explorador de arquivos para selecionar um MP4"""
         path = filedialog.askopenfilename()
         if path:
             self.entry_path.delete(0, tk.END)
@@ -98,7 +86,6 @@ class Add(ctk.CTkFrame):
         path = self.entry_path.get()
         hour = self.entry_hour.get()
         repeats = self.entry_repeats.get()
-        volume = int(self.slider_volume.get())
 
         try:
             repeats = int(repeats)
@@ -111,22 +98,22 @@ class Add(ctk.CTkFrame):
             return
 
         try:
-            schedule.every().day.at(hour).do(lambda: self.execute_and_remove(path, hour, repeats, volume))
+            schedule.every().day.at(hour).do(lambda: self.execute_and_remove(path, hour, repeats))
 
             agendamentos = self.load_from_json()
-            agendamentos.append({"horario": hour, "arquivo": path, "repeticoes": repeats, "volume": volume})
+            agendamentos.append({"horario": hour, "arquivo": path, "repeticoes": repeats})
             self.save_to_json(agendamentos)
 
-            self.listbox.insert(tk.END, f"{hour} - {os.path.basename(path)} ({repeats}x) - Volume: {volume}%")
+            self.listbox.insert(tk.END, f"{hour} - {os.path.basename(path)} ({repeats}x)")
 
-            messagebox.showinfo('Sucesso', f'Música agendada para {hour} e será tocada {repeats} vezes com volume {volume}%.')
+            messagebox.showinfo('Sucesso', f'Música agendada para {hour} e será tocada {repeats} vezes.')
         except Exception as e:
             messagebox.showerror('Erro', f'Erro ao agendar: {e}')
 
-    def execute_and_remove(self, path, hour, repeats, volume):
-        """Executa o arquivo MOV e remove da lista da interface após tocar, repetindo X vezes"""
+    def execute_and_remove(self, path, hour, repeats):
+        """Executa o arquivo MP4 e remove da lista da interface após tocar, repetindo X vezes"""
         for _ in range(repeats):
-            self.play_music(path, volume)
+            self.play_music(path)
 
         for i in range(self.listbox.size()):
             item_text = self.listbox.get(i)
@@ -153,37 +140,24 @@ class Add(ctk.CTkFrame):
         except Exception as e:
             print(f"Erro ao alterar volume do Spotify: {e}")
 
-    def play_music(self, path, volume):
-        """Toca o anúncio com o volume especificado."""
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(
-            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume_interface = interface.QueryInterface(IAudioEndpointVolume)
-        volume_original = volume_interface.GetMasterVolumeLevelScalar()
-
-        volume_interface.SetMasterVolumeLevelScalar(volume / 100, None)
-
+    def play_music(self, path):
+        """Reduz o volume do Spotify, toca o anúncio e depois restaura o volume."""
+        self.alterar_volume_spotify("diminuir")
         playsound(path)
-
-        volume_interface.SetMasterVolumeLevelScalar(volume_original, None)
+        self.alterar_volume_spotify("restaurar")
 
     def load_agendamentos(self):
         """Carrega os agendamentos do JSON e agenda novamente"""
         agendamentos = self.load_from_json()
         for agendamento in agendamentos:
-            schedule.every().day.at(agendamento["horario"]).do(
-                lambda path=agendamento["arquivo"], hour=agendamento["horario"], repeats=agendamento["repeticoes"], volume=agendamento["volume"]:
-                self.execute_and_remove(path, hour, repeats, volume)
-            )
+            schedule.every().day.at(agendamento["horario"]).do(lambda: self.execute_and_remove(agendamento["arquivo"], agendamento["horario"], agendamento["repeticoes"]))
 
-            self.listbox.insert(tk.END, f"{agendamento['horario']} - {os.path.basename(agendamento['arquivo'])} ({agendamento['repeticoes']}x) - Volume: {agendamento['volume']}%")
+            # Adiciona na lista de exibição
+            self.listbox.insert(tk.END, f"{agendamento['horario']} - {os.path.basename(agendamento['arquivo'])} ({agendamento['repeticoes']}x)")
 
     def on_item_click(self, event):
         """Função chamada quando um item da lista é clicado"""
         selected_index = self.listbox.curselection()
-        if selected_index:
-            selected_item = self.listbox.get(selected_index)
-            messagebox.showinfo("Item Selecionado", f"Você clicou em: {selected_item}")
 
     def remove_selected_item(self, event):
         """Remove o item selecionado da lista e do JSON"""
@@ -192,6 +166,7 @@ class Add(ctk.CTkFrame):
             selected_item = self.listbox.get(selected_index)
             confirm = messagebox.askyesno("Confirmar", f"Tem certeza que deseja remover:\n{selected_item}?")
             if confirm:
+                # Remove da lista de exibição
                 self.listbox.delete(selected_index)
 
                 # Remove do JSON
@@ -199,8 +174,6 @@ class Add(ctk.CTkFrame):
                 horario = selected_item.split(" - ")[0]  # Extrai o horário do item selecionado
                 agendamentos = [agendamento for agendamento in agendamentos if agendamento["horario"] != horario]
                 self.save_to_json(agendamentos)
-
-                messagebox.showinfo("Sucesso", "Anúncio removido com sucesso!")
         else:
             messagebox.showwarning("Aviso", "Nenhum item selecionado.")
 
