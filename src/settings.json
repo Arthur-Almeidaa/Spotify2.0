@@ -1,0 +1,8 @@
+{
+  "background_color": "black",
+  "frame_color": "red",
+  "width": "600",
+  "height": "400",
+  "start_hour": "21:05",
+  "final_hour": "21:00"
+}
