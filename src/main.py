@@ -99,9 +99,11 @@ class Add(ctk.CTkFrame):
         path = filedialog.askopenfilename()
         self.path.insert(0, path)
 
+
     def schedule_music(self, event):
         """Agenda a execução do arquivo no horário especificado e salva no JSON"""
         path = self.path.get()
+        self.path.delete(0, 'end')
         hour = self.entry_hour.get()
         repeats = self.entry_repeats.get()
 
